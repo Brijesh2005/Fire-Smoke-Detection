@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fire & Smoke Detection AI | Surveillance Dashboard</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="logo-group">
+        <div class="logo-icon">🔥</div>
+        <div class="logo-text">
+          <h1>Fire & Smoke Detection AI</h1>
+          <p>Real-Time Deep Learning Computer Vision Surveillance System</p>
+        </div>
+      </div>
+      
+      <div class="header-meta">
+        <span class="badge badge-online">
+          <span class="status-dot"></span> System Ready
+        </span>
+        <span class="badge" id="modelBadge">Model: ResNet-50</span>
+        <span class="badge" id="deviceBadge">Device: CPU</span>
+        <button class="audio-toggle-btn active" id="audioToggleBtn" title="Toggle audio alert siren">
+          🔊 Alerts: On
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-wrapper">
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs" aria-label="Detection Modes">
+      <button class="tab-btn active" data-tab="imageTabPanel">
+        <span>🖼️</span> Image Detection
+      </button>
+      <button class="tab-btn" data-tab="videoTabPanel">
+        <span>🎥</span> Video Analysis
+      </button>
+      <button class="tab-btn" data-tab="webcamTabPanel">
+        <span>📹</span> Live Webcam
+      </button>
+      <button class="tab-btn" data-tab="apiTabPanel">
+        <span>🔌</span> REST API Docs
+      </button>
+      <button class="tab-btn" data-tab="aboutTabPanel">
+        <span>📊</span> Model & Metrics
+      </button>
+    </nav>
+
+    <!-- ========================================================
+         TAB 1: Image Detection & Sample Gallery
+         ======================================================== -->
+    <section class="tab-panel active" id="imageTabPanel">
+      <div class="dashboard-grid">
+        
+        <!-- Left: Upload & Preview Card -->
+        <div class="card">
+          <div class="card-title">
+            <span>Input Image</span>
+            <span class="sub">Upload or drag an image</span>
+          </div>
+
+          <!-- Dropzone -->
+          <div class="dropzone" id="imageDropzone">
+            <div class="dropzone-icon">📤</div>
+            <p>Drag & drop image here, or <span class="browse-link">browse files</span></p>
+            <p style="font-size: 0.75rem; color: var(--text-subtle); margin-top: 4px;">Supports PNG, JPG, JPEG, WEBP</p>
+            <input type="file" id="imageFileInput" class="file-input" accept="image/*" />
+          </div>
+
+          <!-- Image Preview Area -->
+          <div class="preview-container" id="imagePreviewContainer">
+            <div class="preview-placeholder" id="previewPlaceholder">
+              <span>🖼️</span>
+              <p>No image selected yet</p>
+            </div>
+            <img id="imagePreview" alt="Detection Preview" style="display: none;" />
+          </div>
+
+          <!-- Quick Samples Gallery -->
+          <div class="samples-section">
+            <div class="samples-title">Quick Test Samples (From Dataset)</div>
+            <div class="samples-grid" id="samplesGrid">
+              <!-- Dynamically populated from /api/samples -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: AI Classification Results -->
+        <div class="card">
+          <div class="card-title">
+            <span>Detection Result</span>
+            <span class="sub">PyTorch ResNet-50 inference</span>
+          </div>
+
+          <!-- Hazard Banner -->
+          <div class="result-banner" id="imageResultBanner">
+            <div class="banner-left">
+              <div class="hazard-icon" id="hazardIcon">🛡️</div>
+              <div>
+                <div class="hazard-heading" id="hazardHeading">System Standby</div>
+                <div class="hazard-sub" id="hazardSub">Select or upload an image to begin classification</div>
+              </div>
+            </div>
+            <div class="confidence-chip" id="confidenceChip">--%</div>
+          </div>
+
+          <!-- Class Probabilities Breakdown -->
+          <div class="card-title" style="margin-top: 0.5rem; font-size: 0.95rem;">
+            <span>Class Probability Distribution</span>
+          </div>
+          
+          <div class="prob-list">
+            <!-- Fire -->
+            <div class="prob-item">
+              <div class="prob-header">
+                <span>🔥 Fire</span>
+                <span id="probFire">0.0%</span>
+              </div>
+              <div class="prob-bar-track">
+                <div class="prob-bar-fill fill-fire" id="barFire" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <!-- Smoke -->
+            <div class="prob-item">
+              <div class="prob-header">
+                <span>💨 Smoke</span>
+                <span id="probSmoke">0.0%</span>
+              </div>
+              <div class="prob-bar-track">
+                <div class="prob-bar-fill fill-smoke" id="barSmoke" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <!-- Neutral -->
+            <div class="prob-item">
+              <div class="prob-header">
+                <span>🟢 Neutral (Clear)</span>
+                <span id="probNeutral">0.0%</span>
+              </div>
+              <div class="prob-bar-track">
+                <div class="prob-bar-fill fill-neutral" id="barNeutral" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Metadata & Latency -->
+          <div class="meta-box">
+            <span id="metaLatency">Latency: -- ms</span>
+            <span id="metaSource">Source: None</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ========================================================
+         TAB 2: Video Analysis
+         ======================================================== -->
+    <section class="tab-panel" id="videoTabPanel">
+      <div class="dashboard-grid">
+        
+        <!-- Video Upload Card -->
+        <div class="card">
+          <div class="card-title">
+            <span>Upload Video</span>
+            <span class="sub">MP4, AVI, MOV up to 50MB</span>
+          </div>
+
+          <div class="dropzone" id="videoDropzone">
+            <div class="dropzone-icon">🎬</div>
+            <p>Drag & drop video clip, or <span class="browse-link">browse files</span></p>
+            <p style="font-size: 0.75rem; color: var(--text-subtle); margin-top: 4px;">Samples frames at 0.5s intervals</p>
+            <input type="file" id="videoFileInput" class="file-input" accept="video/*" />
+          </div>
+
+          <div id="videoProgressSection" style="display: none; text-align: center; padding: 2rem 1rem;">
+            <div style="font-size: 2rem; animation: spin 1s linear infinite;">⏳</div>
+            <p style="margin-top: 0.5rem; font-weight: 600;">Processing Video Frames...</p>
+            <p style="font-size: 0.8rem; color: var(--text-muted);">Running neural network inference across sampled frames</p>
+          </div>
+        </div>
+
+        <!-- Video Results & Timeline -->
+        <div class="card">
+          <div class="card-title">
+            <span>Video Analysis Report</span>
+            <span class="sub">Detection timeline and hazard log</span>
+          </div>
+
+          <div id="videoResultsSection" style="display: none;">
+            <div class="result-banner" id="videoResultBanner" style="margin-bottom: 1rem;">
+              <div class="banner-left">
+                <div class="hazard-icon">📹</div>
+                <div>
+                  <div class="hazard-heading">Overall: <span id="videoOverallPred">--</span></div>
+                  <div class="hazard-sub">Video processing summary complete</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="video-stats-grid">
+              <div class="stat-card">
+                <div class="stat-val" id="videoFirePercent" style="color: var(--danger-red);">0%</div>
+                <div class="stat-lbl">Fire Frames</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-val" id="videoSmokePercent" style="color: var(--warning-amber);">0%</div>
+                <div class="stat-lbl">Smoke Frames</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-val" id="videoNeutralPercent" style="color: var(--safe-green);">0%</div>
+                <div class="stat-lbl">Safe Frames</div>
+              </div>
+            </div>
+
+            <!-- Timeline -->
+            <div class="card-title" style="font-size: 0.95rem; margin-bottom: 0.5rem;">
+              <span>Timestamp Detection Log</span>
+            </div>
+            <div class="timeline-container" id="videoTimeline">
+              <!-- Injected by main.js -->
+            </div>
+          </div>
+
+          <div id="videoEmptyPrompt" style="text-align: center; color: var(--text-muted); padding: 3rem 1rem;">
+            <span>Upload a video to see the frame-by-frame event timeline.</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ========================================================
+         TAB 3: Live Webcam Surveillance
+         ======================================================== -->
+    <section class="tab-panel" id="webcamTabPanel">
+      <div class="dashboard-grid">
+        
+        <!-- Camera Stream Card -->
+        <div class="card">
+          <div class="card-title">
+            <span>Live Camera Feed</span>
+            <span class="sub">WebRTC Browser Stream</span>
+          </div>
+
+          <div class="webcam-feed-container">
+            <video id="webcamVideo" autoplay playsinline muted></video>
+            <canvas id="webcamCanvas"></canvas>
+          </div>
+
+          <div class="camera-controls">
+            <button class="btn btn-primary" id="startCameraBtn">
+              <span>▶️</span> Start Surveillance
+            </button>
+            <button class="btn btn-danger" id="stopCameraBtn" style="display: none;">
+              <span>⏹️</span> Stop Camera
+            </button>
+            <span id="webcamFpsText" style="font-size: 0.8rem; color: var(--text-muted); margin-left: auto;">
+              Inference: -- FPS
+            </span>
+          </div>
+        </div>
+
+        <!-- Real-Time Camera HUD & Alerts -->
+        <div class="card">
+          <div class="card-title">
+            <span>Real-Time Alert Monitor</span>
+            <span class="sub">Live inference stream</span>
+          </div>
+
+          <div class="result-banner" id="webcamBanner">
+            <div class="banner-left">
+              <div class="hazard-icon" id="webcamHazardIcon">🚨</div>
+              <div>
+                <div class="hazard-heading" id="webcamStatusText">CAMERA OFFLINE</div>
+                <div class="hazard-sub">Start camera stream to begin live detection</div>
+              </div>
+            </div>
+            <div class="confidence-chip" id="webcamConfidence">--%</div>
+          </div>
+
+          <div style="margin-top: 1rem; color: var(--text-muted); font-size: 0.85rem; line-height: 1.6;">
+            <p><strong>How it works:</strong></p>
+            <ul style="margin-left: 1.25rem; margin-top: 0.5rem;">
+              <li>Captures frames directly from your webcam using HTML5 <code>getUserMedia</code>.</li>
+              <li>Sends frames securely to the local PyTorch inference endpoint (<code>/api/predict/frame</code>).</li>
+              <li>Instantly flags fire or smoke hazards with a pulsing visual alert and audible siren.</li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ========================================================
+         TAB 4: REST API Documentation
+         ======================================================== -->
+    <section class="tab-panel" id="apiTabPanel">
+      <div class="card">
+        <div class="card-title">
+          <span>REST API Specification & Endpoints</span>
+          <span class="sub">Integrate with cameras, IoT sensors, and external apps</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 1.5rem; margin-top: 0.5rem;">
+          
+          <!-- Endpoint 1 -->
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: var(--safe-green); border: none;">GET</span>
+              <code style="font-size: 1rem; color: #fff;">/api/health</code>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+              Returns model status, device, and PyTorch version.
+            </p>
+            <pre class="code-block">curl -X GET http://localhost:5000/api/health</pre>
+          </div>
+
+          <!-- Endpoint 2 -->
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span class="badge" style="background: rgba(59, 130, 246, 0.2); color: var(--brand-blue); border: none;">POST</span>
+              <code style="font-size: 1rem; color: #fff;">/api/predict/image</code>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+              Classifies an image via multipart form upload or JSON base64.
+            </p>
+            <pre class="code-block">curl -X POST -F "file=@test-imgs/image_0.jpg" http://localhost:5000/api/predict/image</pre>
+            <p style="font-size: 0.8rem; color: var(--text-subtle); margin-top: 0.25rem;">Sample Response:</p>
+            <pre class="code-block" style="color: #a5d6ff;">{
+  "prediction": "Smoke",
+  "confidence": 100.0,
+  "is_hazard": true,
+  "hazard_level": "WARNING",
+  "probabilities": {
+    "Fire": 0.0,
+    "Smoke": 100.0,
+    "Neutral": 0.0
+  },
+  "latency_ms": 95.2
+}</pre>
+          </div>
+
+          <!-- Endpoint 3 -->
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span class="badge" style="background: rgba(59, 130, 246, 0.2); color: var(--brand-blue); border: none;">POST</span>
+              <code style="font-size: 1rem; color: #fff;">/api/predict/video</code>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+              Uploads a video file for frame sampling, event timeline, and hazard breakdown.
+            </p>
+            <pre class="code-block">curl -X POST -F "file=@sample.mp4" -F "sample_interval=0.5" http://localhost:5000/api/predict/video</pre>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================
+         TAB 5: Model & Metrics
+         ======================================================== -->
+    <section class="tab-panel" id="aboutTabPanel">
+      <div class="dashboard-grid">
+        
+        <div class="card">
+          <div class="card-title">
+            <span>Model Architecture</span>
+            <span class="sub">ResNet-50 Deep Residual Network</span>
+          </div>
+          <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.6;">
+            <p>The model leverages transfer learning on <strong>ResNet-50</strong> pretrained on ImageNet.</p>
+            <p style="margin-top: 0.5rem;"><strong>Classifier Head:</strong></p>
+            <ul style="margin-left: 1.25rem; margin-top: 0.25rem;">
+              <li><code>Linear(2048, 128)</code></li>
+              <li><code>ReLU()</code> activation</li>
+              <li><code>Linear(128, 3)</code></li>
+              <li><code>Softmax(dim=1)</code> output across classes</li>
+            </ul>
+            <p style="margin-top: 0.75rem;"><strong>Classes:</strong></p>
+            <ul style="margin-left: 1.25rem; margin-top: 0.25rem;">
+              <li>🔴 <strong>Fire</strong> (Active flames, open fire)</li>
+              <li>🟠 <strong>Smoke</strong> (Smoke plumes, early stage fire)</li>
+              <li>🟢 <strong>Neutral</strong> (Normal ambient conditions, no fire)</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <span>Training & Validation Performance</span>
+            <span class="sub">Validation accuracy: ~93%</span>
+          </div>
+          <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 220px; text-align: center;">
+              <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Model Accuracy Curve</p>
+              <img src="/api/utils/accuracy.png" alt="Model Accuracy" style="width: 100%; border-radius: 6px; border: 1px solid var(--border-color);" />
+            </div>
+            <div style="flex: 1; min-width: 220px; text-align: center;">
+              <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Training Loss Curve</p>
+              <img src="/api/utils/trainloss.png" alt="Training Loss" style="width: 100%; border-radius: 6px; border: 1px solid var(--border-color);" />
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="app-footer">
+    <p>Fire & Smoke Detection System &copy; 2026 | Powered by PyTorch & Flask</p>
+  </footer>
+
+  <script src="/static/js/main.js"></script>
+</body>
+</html>
