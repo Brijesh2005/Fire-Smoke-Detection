@@ -1,30 +1,50 @@
 /**
- * Fire & Smoke Detection - Web Dashboard Controller
- * Handles image upload, sample gallery, video analysis, live webcam stream,
- * Web Audio API sirens, and API communication.
+ * Fire and Smoke Detection - Enterprise Surveillance Command Center Controller
+ * Manages real-time WebRTC streams, PyTorch neural telemetry, Web Audio sirens,
+ * clipboard ingestion, sample filtering, and interactive API playgrounds.
  */
 
 document.addEventListener("DOMContentLoaded", () => {
-  // ==========================================
-  // 1. Audio Siren Synthesizer (Web Audio API)
-  // ==========================================
+  // ========================================================================
+  // 1. Live Surveillance Clock
+  // ========================================================================
+  const liveClockDisplay = document.getElementById("liveClockDisplay");
+  const hudTimestamp = document.getElementById("hudTimestamp");
+
+  function updateClock() {
+    const now = new Date();
+    const utcString = now.toTimeString().split(" ")[0] + " LOC";
+    if (liveClockDisplay) {
+      liveClockDisplay.textContent = utcString;
+    }
+    if (hudTimestamp) {
+      const datePart = now.toISOString().split("T")[0];
+      hudTimestamp.textContent = `${datePart} ${now.toTimeString().split(" ")[0]}`;
+    }
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ========================================================================
+  // 2. Audio Alert & Multi-Tone Siren (Web Audio API)
+  // ========================================================================
   let audioCtx = null;
   let isMuted = false;
-  let isAlarmPlaying = false;
-  let alarmInterval = null;
+  let isSirenActive = false;
+  let sirenTimer = null;
 
-  function initAudio() {
+  function initAudioContext() {
     if (!audioCtx) {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (AudioContext) {
-        audioCtx = new AudioContext();
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        audioCtx = new AudioContextClass();
       }
     }
   }
 
-  function playAlertBeep(frequency = 880, duration = 0.25) {
+  function playTone(freqStart, freqEnd, duration, type = "sawtooth", gainLevel = 0.2) {
     if (isMuted) return;
-    initAudio();
+    initAudioContext();
     if (!audioCtx) return;
 
     if (audioCtx.state === "suspended") {
@@ -35,12 +55,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
 
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(frequency, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(frequency * 1.5, audioCtx.currentTime + duration);
+      osc.type = type;
+      osc.frequency.setValueAtTime(freqStart, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(freqEnd, audioCtx.currentTime + duration);
 
-      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+      gain.gain.setValueAtTime(gainLevel, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
 
       osc.connect(gain);
       gain.connect(audioCtx.destination);
@@ -48,129 +68,182 @@ document.addEventListener("DOMContentLoaded", () => {
       osc.start();
       osc.stop(audioCtx.currentTime + duration);
     } catch (e) {
-      console.warn("Audio alert error:", e);
+      console.warn("Audio synthesizer error:", e);
     }
   }
 
-  function triggerAlarmSiren() {
-    if (isMuted || isAlarmPlaying) return;
-    isAlarmPlaying = true;
-    playAlertBeep(900, 0.3);
+  function triggerHazardSiren(hazardType = "Fire") {
+    if (isMuted || isSirenActive) return;
+    isSirenActive = true;
 
-    alarmInterval = setTimeout(() => {
-      isAlarmPlaying = false;
+    if (hazardType === "Fire") {
+      // Urgent high-frequency dual sweep
+      playTone(950, 1400, 0.35, "sawtooth", 0.25);
+      setTimeout(() => {
+        playTone(1400, 950, 0.35, "sawtooth", 0.25);
+      }, 350);
+    } else {
+      // Pulsed warning warble for Smoke
+      playTone(650, 850, 0.4, "sine", 0.2);
+    }
+
+    sirenTimer = setTimeout(() => {
+      isSirenActive = false;
     }, 1200);
   }
 
-  // Audio mute button toggle
   const audioToggleBtn = document.getElementById("audioToggleBtn");
+  const audioBtnText = document.getElementById("audioBtnText");
   if (audioToggleBtn) {
     audioToggleBtn.addEventListener("click", () => {
-      initAudio();
+      initAudioContext();
       isMuted = !isMuted;
       audioToggleBtn.classList.toggle("active", !isMuted);
-      audioToggleBtn.innerHTML = isMuted
-        ? "🔇 Alerts: Off"
-        : "🔊 Alerts: On";
-      if (!isMuted) {
-        playAlertBeep(600, 0.15);
+
+      if (isMuted) {
+        if (audioBtnText) audioBtnText.textContent = "Siren: Muted";
+        showToast("Audio alarm sirens muted");
+      } else {
+        if (audioBtnText) audioBtnText.textContent = "Siren: Armed";
+        playTone(700, 1000, 0.15, "sine", 0.15);
+        showToast("Audio alarm sirens armed");
       }
     });
   }
 
-  // ==========================================
-  // 2. Tab Navigation
-  // ==========================================
-  const tabBtns = document.querySelectorAll(".tab-btn");
-  const tabPanels = document.querySelectorAll(".tab-panel");
+  // ========================================================================
+  // 3. Alert Sensitivity Threshold Control
+  // ========================================================================
+  const thresholdSlider = document.getElementById("thresholdSlider");
+  const thresholdValDisplay = document.getElementById("thresholdValDisplay");
+  let detectionThreshold = 70;
 
-  tabBtns.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const targetId = btn.getAttribute("data-tab");
+  if (thresholdSlider && thresholdValDisplay) {
+    thresholdSlider.addEventListener("input", (e) => {
+      detectionThreshold = parseInt(e.target.value, 10);
+      thresholdValDisplay.textContent = `${detectionThreshold}%`;
+    });
+  }
 
-      tabBtns.forEach((b) => b.classList.remove("active"));
+  // ========================================================================
+  // 4. Toast Notifications
+  // ========================================================================
+  const toastNotice = document.getElementById("toastNotice");
+  const toastMessage = document.getElementById("toastMessage");
+  let toastTimeout = null;
+
+  function showToast(message) {
+    if (!toastNotice || !toastMessage) return;
+    toastMessage.textContent = message;
+    toastNotice.classList.add("show");
+
+    if (toastTimeout) clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => {
+      toastNotice.classList.remove("show");
+    }, 2800);
+  }
+
+  // ========================================================================
+  // 5. Segmented Tab Navigation
+  // ========================================================================
+  const navTabItems = document.querySelectorAll(".nav-tab-item");
+  const tabPanels = document.querySelectorAll(".tab-content-panel");
+
+  navTabItems.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const targetPanelId = tab.getAttribute("data-tab");
+
+      navTabItems.forEach((t) => t.classList.remove("active"));
       tabPanels.forEach((p) => p.classList.remove("active"));
 
-      btn.classList.add("active");
-      const targetPanel = document.getElementById(targetId);
-      if (targetPanel) {
-        targetPanel.classList.add("active");
+      tab.classList.add("active");
+      const activePanel = document.getElementById(targetPanelId);
+      if (activePanel) {
+        activePanel.classList.add("active");
       }
 
-      // Stop webcam stream if navigating away from Webcam tab
-      if (targetId !== "webcamTabPanel" && isWebcamRunning) {
-        stopWebcam();
+      // If switching away from webcam tab, disengage camera stream
+      if (targetPanelId !== "webcamTabPanel" && isCctvLive) {
+        stopCctvStream();
       }
     });
   });
 
-  // ==========================================
-  // 3. System Health Check
-  // ==========================================
-  async function fetchHealth() {
+  // ========================================================================
+  // 6. Telemetry & Health Probe
+  // ========================================================================
+  async function probeSystemHealth() {
     try {
       const res = await fetch("/api/health");
       if (res.ok) {
         const data = await res.json();
-        const devElem = document.getElementById("deviceBadge");
-        if (devElem) {
-          devElem.textContent = `Device: ${data.device.toUpperCase()}`;
-        }
-        const modelElem = document.getElementById("modelBadge");
-        if (modelElem) {
-          modelElem.textContent = `Model: ${data.model}`;
-        }
+        const modelPill = document.getElementById("modelPill");
+        const devicePill = document.getElementById("devicePill");
+        if (modelPill) modelPill.textContent = `${data.model}`;
+        if (devicePill) devicePill.textContent = `DEV: ${data.device.toUpperCase()}`;
       }
-    } catch (err) {
-      console.warn("Healthcheck failed:", err);
+    } catch (e) {
+      console.warn("Telemetry probe failed:", e);
     }
   }
-  fetchHealth();
+  probeSystemHealth();
 
-  // ==========================================
-  // 4. Sample Images Gallery
-  // ==========================================
+  // ========================================================================
+  // 7. Categorized Sample Gallery
+  // ========================================================================
   const samplesGrid = document.getElementById("samplesGrid");
+  const filterChips = document.querySelectorAll(".filter-chip");
+  let cachedSamples = [];
 
-  async function loadSamples() {
+  async function loadSampleLibrary() {
     if (!samplesGrid) return;
     try {
       const res = await fetch("/api/samples");
       if (!res.ok) return;
-      const samples = await res.json();
-
-      samplesGrid.innerHTML = "";
-      samples.forEach((sample) => {
-        const card = document.createElement("div");
-        card.className = "sample-card";
-        card.title = `Click to test ${sample.filename} (${sample.hint})`;
-        card.innerHTML = `
-          <img src="${sample.url}" alt="${sample.filename}" loading="lazy" />
-          <div class="sample-label">${sample.hint}</div>
-        `;
-        card.addEventListener("click", () => {
-          predictSampleImage(sample);
-        });
-        samplesGrid.appendChild(card);
-      });
+      cachedSamples = await res.json();
+      renderFilteredSamples("all");
     } catch (e) {
-      console.error("Error loading sample gallery:", e);
+      console.error("Failed to load sample library:", e);
     }
   }
-  loadSamples();
+  loadSampleLibrary();
 
-  async function predictSampleImage(sample) {
-    const previewImg = document.getElementById("imagePreview");
-    const previewContainer = document.getElementById("imagePreviewContainer");
-    const placeholder = document.getElementById("previewPlaceholder");
+  filterChips.forEach((chip) => {
+    chip.addEventListener("click", () => {
+      filterChips.forEach((c) => c.classList.remove("active"));
+      chip.classList.add("active");
+      const filter = chip.getAttribute("data-filter");
+      renderFilteredSamples(filter);
+    });
+  });
 
-    if (placeholder) placeholder.style.display = "none";
-    if (previewImg) {
-      previewImg.src = sample.url;
-      previewImg.style.display = "block";
-    }
+  function renderFilteredSamples(filter) {
+    if (!samplesGrid) return;
+    samplesGrid.innerHTML = "";
 
-    setResultLoading();
+    const filtered = cachedSamples.filter((sample) => {
+      if (filter === "all") return true;
+      return sample.category === filter;
+    });
+
+    filtered.forEach((sample) => {
+      const item = document.createElement("div");
+      item.className = "gallery-item";
+      item.title = `Inspect ${sample.filename} (${sample.hint})`;
+      item.innerHTML = `
+        <img src="${sample.url}" alt="${sample.filename}" loading="lazy" />
+        <div class="gallery-tag">${sample.hint.replace(" Sample", "")}</div>
+      `;
+      item.addEventListener("click", () => {
+        executeSampleInspection(sample);
+      });
+      samplesGrid.appendChild(item);
+    });
+  }
+
+  async function executeSampleInspection(sample) {
+    stagePreview(sample.url);
+    setAssessmentStaging();
 
     try {
       const res = await fetch("/api/predict/image", {
@@ -179,19 +252,22 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({ sample_filename: sample.filename }),
       });
       const data = await res.json();
-      renderImageResult(data);
+      applyThreatTelemetry(data);
     } catch (e) {
-      renderError("Failed to run prediction on sample image.");
+      applyAssessmentError("Failed to execute inference on sample.");
     }
   }
 
-  // ==========================================
-  // 5. Image Upload & Drag-and-Drop
-  // ==========================================
+  // ========================================================================
+  // 8. Image Viewport, Zoom & Clipboard Ingestion
+  // ========================================================================
   const imageDropzone = document.getElementById("imageDropzone");
   const imageFileInput = document.getElementById("imageFileInput");
   const imagePreview = document.getElementById("imagePreview");
-  const previewPlaceholder = document.getElementById("previewPlaceholder");
+  const imagePlaceholder = document.getElementById("imagePlaceholder");
+  const viewportToolbar = document.getElementById("viewportToolbar");
+
+  let currentZoom = 1.0;
 
   if (imageDropzone && imageFileInput) {
     imageDropzone.addEventListener("click", () => imageFileInput.click());
@@ -200,47 +276,88 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       imageDropzone.classList.add("dragover");
     });
-
     imageDropzone.addEventListener("dragleave", () => {
       imageDropzone.classList.remove("dragover");
     });
-
     imageDropzone.addEventListener("drop", (e) => {
       e.preventDefault();
       imageDropzone.classList.remove("dragover");
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        handleImageFile(e.dataTransfer.files[0]);
+        processUploadedImage(e.dataTransfer.files[0]);
       }
     });
-
     imageFileInput.addEventListener("change", (e) => {
       if (e.target.files && e.target.files.length > 0) {
-        handleImageFile(e.target.files[0]);
+        processUploadedImage(e.target.files[0]);
       }
     });
   }
 
-  function handleImageFile(file) {
+  // Paste from clipboard support
+  window.addEventListener("paste", (e) => {
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        const blob = items[i].getAsFile();
+        showToast("Image pasted from clipboard");
+        processUploadedImage(blob);
+        break;
+      }
+    }
+  });
+
+  // Viewport Zoom Tools
+  const btnZoomIn = document.getElementById("btnZoomIn");
+  const btnZoomOut = document.getElementById("btnZoomOut");
+  const btnZoomReset = document.getElementById("btnZoomReset");
+
+  if (btnZoomIn && imagePreview) {
+    btnZoomIn.addEventListener("click", () => {
+      currentZoom = Math.min(3.0, currentZoom + 0.25);
+      imagePreview.style.transform = `scale(${currentZoom})`;
+    });
+  }
+  if (btnZoomOut && imagePreview) {
+    btnZoomOut.addEventListener("click", () => {
+      currentZoom = Math.max(0.5, currentZoom - 0.25);
+      imagePreview.style.transform = `scale(${currentZoom})`;
+    });
+  }
+  if (btnZoomReset && imagePreview) {
+    btnZoomReset.addEventListener("click", () => {
+      currentZoom = 1.0;
+      imagePreview.style.transform = "scale(1.0)";
+    });
+  }
+
+  function stagePreview(src) {
+    if (imagePlaceholder) imagePlaceholder.style.display = "none";
+    if (viewportToolbar) viewportToolbar.style.display = "flex";
+    if (imagePreview) {
+      imagePreview.src = src;
+      imagePreview.style.display = "block";
+      currentZoom = 1.0;
+      imagePreview.style.transform = "scale(1.0)";
+    }
+  }
+
+  function processUploadedImage(file) {
     if (!file.type.startsWith("image/")) {
-      alert("Please upload a valid image file (PNG, JPG, WEBP).");
+      showToast("Invalid file format. Provide an image.");
       return;
     }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
-      if (previewPlaceholder) previewPlaceholder.style.display = "none";
-      if (imagePreview) {
-        imagePreview.src = event.target.result;
-        imagePreview.style.display = "block";
-      }
+    reader.onload = (evt) => {
+      stagePreview(evt.target.result);
     };
     reader.readAsDataURL(file);
 
-    uploadAndPredictImage(file);
+    executeUploadInference(file);
   }
 
-  async function uploadAndPredictImage(file) {
-    setResultLoading();
+  async function executeUploadInference(file) {
+    setAssessmentStaging();
 
     const formData = new FormData();
     formData.append("file", file);
@@ -252,115 +369,178 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       const data = await res.json();
       if (data.status === "error") {
-        renderError(data.message || "Prediction error");
+        applyAssessmentError(data.message);
       } else {
-        renderImageResult(data);
+        applyThreatTelemetry(data);
       }
     } catch (err) {
-      renderError("Failed to upload image for inference.");
+      applyAssessmentError("Network transmission error during inference.");
     }
   }
 
-  function setResultLoading() {
-    const banner = document.getElementById("imageResultBanner");
-    const heading = document.getElementById("hazardHeading");
-    const sub = document.getElementById("hazardSub");
-    const icon = document.getElementById("hazardIcon");
-    const conf = document.getElementById("confidenceChip");
+  function setAssessmentStaging() {
+    const banner = document.getElementById("imageAssessmentBanner");
+    const heading = document.getElementById("threatHeading");
+    const desc = document.getElementById("threatDescription");
+    const pct = document.getElementById("threatConfidenceDisplay");
+    const iconBox = document.getElementById("threatIconBox");
 
-    if (banner) {
-      banner.className = "result-banner";
+    if (banner) banner.className = "assessment-banner";
+    if (heading) heading.textContent = "INSPECTING TENSOR...";
+    if (desc) desc.textContent = "Running forward pass through ResNet-50 feature extractor";
+    if (pct) pct.textContent = "--%";
+    if (iconBox) {
+      iconBox.innerHTML = `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`;
     }
-    if (heading) heading.textContent = "Analyzing Image...";
-    if (sub) sub.textContent = "Running ResNet-50 PyTorch inference";
-    if (icon) icon.textContent = "⏳";
-    if (conf) conf.textContent = "--%";
   }
 
-  function renderImageResult(data) {
-    const banner = document.getElementById("imageResultBanner");
-    const heading = document.getElementById("hazardHeading");
-    const sub = document.getElementById("hazardSub");
-    const icon = document.getElementById("hazardIcon");
-    const conf = document.getElementById("confidenceChip");
+  function applyThreatTelemetry(data) {
+    const banner = document.getElementById("imageAssessmentBanner");
+    const heading = document.getElementById("threatHeading");
+    const desc = document.getElementById("threatDescription");
+    const pct = document.getElementById("threatConfidenceDisplay");
+    const iconBox = document.getElementById("threatIconBox");
+
+    const globalPill = document.getElementById("globalIncidentPill");
 
     const pred = data.prediction || "Neutral";
     const confidence = data.confidence || 0.0;
     const isHazard = data.is_hazard;
 
-    // Trigger audio alarm if fire or smoke
-    if (isHazard) {
-      triggerAlarmSiren();
+    // Trigger siren if confidence crosses user-configured threshold
+    if (isHazard && confidence >= detectionThreshold) {
+      triggerHazardSiren(pred);
     }
 
-    // Update banner styling
+    // Update Banner Appearance
     if (banner) {
-      banner.className = "result-banner";
+      banner.className = "assessment-banner";
       if (pred === "Fire") {
-        banner.classList.add("hazard-fire");
+        banner.classList.add("threat-fire");
       } else if (pred === "Smoke") {
-        banner.classList.add("hazard-smoke");
+        banner.classList.add("threat-smoke");
       } else {
-        banner.classList.add("hazard-safe");
+        banner.classList.add("threat-safe");
       }
     }
 
-    // Update text
-    if (heading) heading.textContent = `${pred.toUpperCase()} DETECTED`;
-    if (sub) {
-      sub.textContent = isHazard
-        ? `EMERGENCY ALERT: ${data.hazard_level || "HAZARD"} condition detected.`
-        : "STATUS NORMAL: No fire or smoke detected in scene.";
+    // Update Text & Icons
+    if (heading) {
+      heading.textContent =
+        pred === "Fire"
+          ? "CRITICAL HAZARD - FIRE DETECTED"
+          : pred === "Smoke"
+          ? "HIGH ADVISORY - SMOKE DETECTED"
+          : "STATUS SECURE - AMBIENT NORMAL";
     }
 
-    if (icon) {
-      icon.textContent = pred === "Fire" ? "🔥" : pred === "Smoke" ? "💨" : "🛡️";
-    }
-    if (conf) {
-      conf.textContent = `${confidence.toFixed(1)}%`;
-      conf.style.color = data.color_hex || "#fff";
+    if (desc) {
+      desc.textContent = isHazard
+        ? `Thermal anomaly detected. Severity: ${data.hazard_level || "ALERT"}. Recommended immediate dispatch.`
+        : "No combustion or smoke dispersal identified. Scene parameters verify clear.";
     }
 
-    // Update distribution bars
+    if (pct) {
+      pct.textContent = `${confidence.toFixed(1)}%`;
+      pct.style.color = data.color_hex || "#fff";
+    }
+
+    if (iconBox) {
+      if (pred === "Fire") {
+        iconBox.innerHTML = `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="var(--hazard-fire)"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>`;
+      } else if (pred === "Smoke") {
+        iconBox.innerHTML = `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="var(--hazard-smoke)"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"></path></svg>`;
+      } else {
+        iconBox.innerHTML = `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="var(--hazard-safe)"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`;
+      }
+    }
+
+    // Global Command Status Pill
+    if (globalPill) {
+      if (pred === "Fire") {
+        globalPill.textContent = "CRITICAL: FIRE CONFIRMED";
+        globalPill.style.color = "var(--hazard-fire)";
+        globalPill.style.borderColor = "rgba(239, 68, 68, 0.4)";
+      } else if (pred === "Smoke") {
+        globalPill.textContent = "WARNING: SMOKE IDENTIFIED";
+        globalPill.style.color = "var(--hazard-smoke)";
+        globalPill.style.borderColor = "rgba(245, 158, 11, 0.4)";
+      } else {
+        globalPill.textContent = "SECURE - NO THREATS";
+        globalPill.style.color = "var(--hazard-safe)";
+        globalPill.style.borderColor = "rgba(16, 185, 129, 0.3)";
+      }
+    }
+
+    // Update Distribution Bars
     const probs = data.probabilities || {};
-    updateProgressBar("probFire", "barFire", probs["Fire"] || 0.0);
-    updateProgressBar("probSmoke", "barSmoke", probs["Smoke"] || 0.0);
-    updateProgressBar("probNeutral", "barNeutral", probs["Neutral"] || 0.0);
+    syncMeter("valFire", "barFire", probs["Fire"] || 0.0);
+    syncMeter("valSmoke", "barSmoke", probs["Smoke"] || 0.0);
+    syncMeter("valNeutral", "barNeutral", probs["Neutral"] || 0.0);
 
-    // Update metadata box
+    // Update Telemetry Grid
     const metaLatency = document.getElementById("metaLatency");
-    if (metaLatency) {
-      metaLatency.textContent = `Latency: ${data.latency_ms || "--"} ms`;
-    }
+    if (metaLatency) metaLatency.textContent = `${data.latency_ms || "--"} ms`;
+
+    const metaResolution = document.getElementById("metaResolution");
+    if (metaResolution) metaResolution.textContent = data.resolution || "-- x --";
+
     const metaSource = document.getElementById("metaSource");
-    if (metaSource) {
-      metaSource.textContent = `Source: ${data.filename || data.source || "upload"}`;
+    if (metaSource) metaSource.textContent = data.filename || data.source || "Optical Ingestion";
+
+    const metaThreatLevel = document.getElementById("metaThreatLevel");
+    if (metaThreatLevel) {
+      metaThreatLevel.textContent =
+        pred === "Fire"
+          ? "Level 3: Critical"
+          : pred === "Smoke"
+          ? "Level 2: Warning"
+          : "Level 1: Secure";
+    }
+
+    // Update JSON Inspector
+    const jsonDisplay = document.getElementById("jsonPayloadDisplay");
+    if (jsonDisplay) {
+      jsonDisplay.textContent = JSON.stringify(data, null, 2);
     }
   }
 
-  function updateProgressBar(textId, barId, percentage) {
-    const txt = document.getElementById(textId);
-    const bar = document.getElementById(barId);
-    if (txt) txt.textContent = `${percentage.toFixed(1)}%`;
-    if (bar) bar.style.width = `${Math.min(100, Math.max(0, percentage))}%`;
+  function syncMeter(valId, barId, pct) {
+    const valElem = document.getElementById(valId);
+    const barElem = document.getElementById(barId);
+    if (valElem) valElem.textContent = `${pct.toFixed(1)}%`;
+    if (barElem) barElem.style.width = `${Math.min(100, Math.max(0, pct))}%`;
   }
 
-  function renderError(msg) {
-    const heading = document.getElementById("hazardHeading");
-    const sub = document.getElementById("hazardSub");
-    const icon = document.getElementById("hazardIcon");
-    if (heading) heading.textContent = "Inference Failed";
-    if (sub) sub.textContent = msg;
-    if (icon) icon.textContent = "⚠️";
+  function applyAssessmentError(errText) {
+    const heading = document.getElementById("threatHeading");
+    const desc = document.getElementById("threatDescription");
+    if (heading) heading.textContent = "INSPECTION ERROR";
+    if (desc) desc.textContent = errText;
   }
 
-  // ==========================================
-  // 6. Video File Analysis
-  // ==========================================
+  // Copy JSON button
+  const btnCopyJson = document.getElementById("btnCopyJson");
+  if (btnCopyJson) {
+    btnCopyJson.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const jsonDisplay = document.getElementById("jsonPayloadDisplay");
+      if (jsonDisplay && navigator.clipboard) {
+        navigator.clipboard.writeText(jsonDisplay.textContent).then(() => {
+          showToast("JSON payload copied to clipboard");
+        });
+      }
+    });
+  }
+
+  // ========================================================================
+  // 9. Video Feed Audit Pipeline
+  // ========================================================================
   const videoDropzone = document.getElementById("videoDropzone");
   const videoFileInput = document.getElementById("videoFileInput");
-  const videoProgressSection = document.getElementById("videoProgressSection");
-  const videoResultsSection = document.getElementById("videoResultsSection");
+  const videoProcessingState = document.getElementById("videoProcessingState");
+  const videoResultsPanel = document.getElementById("videoResultsPanel");
+  const videoEmptyPrompt = document.getElementById("videoEmptyPrompt");
 
   if (videoDropzone && videoFileInput) {
     videoDropzone.addEventListener("click", () => videoFileInput.click());
@@ -369,38 +549,36 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       videoDropzone.classList.add("dragover");
     });
-
     videoDropzone.addEventListener("dragleave", () => {
       videoDropzone.classList.remove("dragover");
     });
-
     videoDropzone.addEventListener("drop", (e) => {
       e.preventDefault();
       videoDropzone.classList.remove("dragover");
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        handleVideoFile(e.dataTransfer.files[0]);
+        executeVideoAudit(e.dataTransfer.files[0]);
       }
     });
-
     videoFileInput.addEventListener("change", (e) => {
       if (e.target.files && e.target.files.length > 0) {
-        handleVideoFile(e.target.files[0]);
+        executeVideoAudit(e.target.files[0]);
       }
     });
   }
 
-  function handleVideoFile(file) {
+  function executeVideoAudit(file) {
     if (!file.type.startsWith("video/")) {
-      alert("Please upload a valid video file (MP4, AVI, MOV).");
+      showToast("Invalid format. Please supply an MP4/AVI/MOV video.");
       return;
     }
 
-    if (videoProgressSection) videoProgressSection.style.display = "block";
-    if (videoResultsSection) videoResultsSection.style.display = "none";
+    if (videoProcessingState) videoProcessingState.style.display = "block";
+    if (videoResultsPanel) videoResultsPanel.style.display = "none";
+    if (videoEmptyPrompt) videoEmptyPrompt.style.display = "none";
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("sample_interval", "0.5"); // sample every 0.5s
+    formData.append("sample_interval", "0.5");
 
     fetch("/api/predict/video", {
       method: "POST",
@@ -408,205 +586,347 @@ document.addEventListener("DOMContentLoaded", () => {
     })
       .then((res) => res.json())
       .then((data) => {
-        if (videoProgressSection) videoProgressSection.style.display = "none";
+        if (videoProcessingState) videoProcessingState.style.display = "none";
         if (data.status === "error") {
-          alert(`Video Error: ${data.message}`);
+          showToast(`Audit failed: ${data.message}`);
+          if (videoEmptyPrompt) videoEmptyPrompt.style.display = "block";
         } else {
-          renderVideoResult(data);
+          renderVideoAuditResults(data);
         }
       })
       .catch((err) => {
-        if (videoProgressSection) videoProgressSection.style.display = "none";
-        alert("Failed to analyze video: " + err.message);
+        if (videoProcessingState) videoProcessingState.style.display = "none";
+        if (videoEmptyPrompt) videoEmptyPrompt.style.display = "block";
+        showToast("Error processing video file.");
       });
   }
 
-  function renderVideoResult(data) {
-    if (!videoResultsSection) return;
-    videoResultsSection.style.display = "block";
+  function renderVideoAuditResults(data) {
+    if (!videoResultsPanel) return;
+    videoResultsPanel.style.display = "block";
 
-    const overallPred = document.getElementById("videoOverallPred");
-    if (overallPred) {
-      overallPred.textContent = (data.overall_prediction || "Neutral").toUpperCase();
-      overallPred.style.color =
+    const kpiOverall = document.getElementById("kpiOverall");
+    if (kpiOverall) {
+      kpiOverall.textContent = data.overall_prediction.toUpperCase();
+      kpiOverall.style.color =
         data.overall_prediction === "Fire"
-          ? "var(--danger-red)"
+          ? "var(--hazard-fire)"
           : data.overall_prediction === "Smoke"
-          ? "var(--warning-amber)"
-          : "var(--safe-green)";
+          ? "var(--hazard-smoke)"
+          : "var(--hazard-safe)";
     }
 
-    const fireStat = document.getElementById("videoFirePercent");
-    if (fireStat) fireStat.textContent = `${data.stats?.fire_percent || 0}%`;
+    const kpiFire = document.getElementById("kpiFire");
+    if (kpiFire) kpiFire.textContent = `${data.stats?.fire_percent || 0}%`;
 
-    const smokeStat = document.getElementById("videoSmokePercent");
-    if (smokeStat) smokeStat.textContent = `${data.stats?.smoke_percent || 0}%`;
+    const kpiSmoke = document.getElementById("kpiSmoke");
+    if (kpiSmoke) kpiSmoke.textContent = `${data.stats?.smoke_percent || 0}%`;
 
-    const neutralStat = document.getElementById("videoNeutralPercent");
-    if (neutralStat) neutralStat.textContent = `${data.stats?.neutral_percent || 0}%`;
+    const kpiFrames = document.getElementById("kpiFrames");
+    if (kpiFrames) kpiFrames.textContent = data.sampled_frames || 0;
 
-    // Render Timeline Items
-    const timelineContainer = document.getElementById("videoTimeline");
-    if (timelineContainer && data.timeline) {
-      timelineContainer.innerHTML = "";
+    // Build timeline feed
+    const timelineFeed = document.getElementById("videoTimelineFeed");
+    if (timelineFeed && data.timeline) {
+      timelineFeed.innerHTML = "";
       data.timeline.forEach((item) => {
         const row = document.createElement("div");
-        row.className = "timeline-item";
+        row.className = "incident-row";
         const tagClass =
           item.prediction === "Fire"
             ? "tag-fire"
             : item.prediction === "Smoke"
             ? "tag-smoke"
-            : "tag-neutral";
+            : "tag-safe";
 
         row.innerHTML = `
-          <span>⏱️ ${item.timestamp.toFixed(1)}s (Frame ${item.frame})</span>
-          <span class="timeline-tag ${tagClass}">${item.prediction} (${item.confidence.toFixed(1)}%)</span>
+          <span>TIMESTAMP: ${item.timestamp.toFixed(1)}s (Frame #${item.frame})</span>
+          <span class="pill-threat-tag ${tagClass}">${item.prediction} ${item.confidence.toFixed(1)}%</span>
         `;
-        timelineContainer.appendChild(row);
+        timelineFeed.appendChild(row);
       });
     }
 
     if (data.is_hazard) {
-      triggerAlarmSiren();
+      triggerHazardSiren(data.overall_prediction);
     }
   }
 
-  // ==========================================
-  // 7. Live Webcam Surveillance
-  // ==========================================
-  const startCameraBtn = document.getElementById("startCameraBtn");
-  const stopCameraBtn = document.getElementById("stopCameraBtn");
+  // ========================================================================
+  // 10. Live CCTV Surveillance Engine
+  // ========================================================================
+  const btnStartCamera = document.getElementById("btnStartCamera");
+  const btnStopCamera = document.getElementById("btnStopCamera");
+  const btnCaptureSnapshot = document.getElementById("btnCaptureSnapshot");
+  const cameraSelect = document.getElementById("cameraSelect");
+
   const webcamVideo = document.getElementById("webcamVideo");
   const webcamCanvas = document.getElementById("webcamCanvas");
-  const webcamBanner = document.getElementById("webcamBanner");
-  const webcamStatusText = document.getElementById("webcamStatusText");
-  const webcamConfidence = document.getElementById("webcamConfidence");
-  const webcamFpsText = document.getElementById("webcamFpsText");
+  const cctvAssessmentBanner = document.getElementById("cctvAssessmentBanner");
+  const cctvThreatHeading = document.getElementById("cctvThreatHeading");
+  const cctvThreatSub = document.getElementById("cctvThreatSub");
+  const cctvThreatPct = document.getElementById("cctvThreatPct");
+  const cctvThreatIcon = document.getElementById("cctvThreatIcon");
 
-  let webcamStream = null;
-  let webcamInterval = null;
-  let isWebcamRunning = false;
-  let isPredictingFrame = false;
-  let frameCount = 0;
-  let lastFpsTime = Date.now();
+  const hudFpsCounter = document.getElementById("hudFpsCounter");
+  const hudActiveThreatTag = document.getElementById("hudActiveThreatTag");
+  const liveIncidentFeed = document.getElementById("liveIncidentFeed");
+  const btnClearLog = document.getElementById("btnClearLog");
 
-  if (startCameraBtn) {
-    startCameraBtn.addEventListener("click", startWebcam);
-  }
-  if (stopCameraBtn) {
-    stopCameraBtn.addEventListener("click", stopWebcam);
-  }
+  let cctvStream = null;
+  let cctvInterval = null;
+  let isCctvLive = false;
+  let isFrameInFlight = false;
+  let fpsSampleCount = 0;
+  let fpsTimerStart = Date.now();
 
-  async function startWebcam() {
-    initAudio();
+  // Enumerate Connected Camera Devices
+  async function populateCameraDevices() {
+    if (!cameraSelect || !navigator.mediaDevices?.enumerateDevices) return;
     try {
-      webcamStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 } },
-        audio: false,
-      });
-      webcamVideo.srcObject = webcamStream;
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter((d) => d.kind === "videoinput");
+      if (videoDevices.length > 0) {
+        cameraSelect.innerHTML = "";
+        videoDevices.forEach((dev, idx) => {
+          const opt = document.createElement("option");
+          opt.value = dev.deviceId;
+          opt.textContent = dev.label || `Optical Sensor Channel 0${idx + 1}`;
+          cameraSelect.appendChild(opt);
+        });
+      }
+    } catch (e) {
+      console.warn("Could not enumerate camera devices:", e);
+    }
+  }
+  populateCameraDevices();
+
+  if (btnStartCamera) {
+    btnStartCamera.addEventListener("click", startCctvStream);
+  }
+  if (btnStopCamera) {
+    btnStopCamera.addEventListener("click", stopCctvStream);
+  }
+
+  async function startCctvStream() {
+    initAudioContext();
+    const deviceId = cameraSelect?.value;
+    const constraints = {
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+      },
+      audio: false,
+    };
+
+    try {
+      cctvStream = await navigator.mediaDevices.getUserMedia(constraints);
+      webcamVideo.srcObject = cctvStream;
       await webcamVideo.play();
 
-      isWebcamRunning = true;
-      startCameraBtn.style.display = "none";
-      stopCameraBtn.style.display = "inline-flex";
+      isCctvLive = true;
+      btnStartCamera.style.display = "none";
+      btnStopCamera.style.display = "inline-flex";
+      if (btnCaptureSnapshot) btnCaptureSnapshot.disabled = false;
 
-      if (webcamStatusText) webcamStatusText.textContent = "MONITORING ACTIVE";
+      if (cctvThreatHeading) cctvThreatHeading.textContent = "SURVEILLANCE ENGAGED";
+      if (cctvThreatSub) cctvThreatSub.textContent = "Active perimeter scan in progress...";
 
-      // Loop frame capture every 400ms for responsive near-realtime inference
-      webcamInterval = setInterval(captureAndSendWebcamFrame, 400);
+      // Re-populate devices with authorized device labels
+      populateCameraDevices();
+
+      // Poll frames every 350ms for low-latency near real-time detection
+      cctvInterval = setInterval(pollWebcamFrame, 350);
+      showToast("CCTV surveillance stream engaged");
     } catch (err) {
-      alert("Unable to access camera: " + err.message);
+      alert("Unable to access optical sensor: " + err.message);
     }
   }
 
-  function stopWebcam() {
-    if (webcamInterval) {
-      clearInterval(webcamInterval);
-      webcamInterval = null;
+  function stopCctvStream() {
+    if (cctvInterval) {
+      clearInterval(cctvInterval);
+      cctvInterval = null;
     }
-    if (webcamStream) {
-      webcamStream.getTracks().forEach((track) => track.stop());
-      webcamStream = null;
+    if (cctvStream) {
+      cctvStream.getTracks().forEach((t) => t.stop());
+      cctvStream = null;
     }
     if (webcamVideo) {
       webcamVideo.srcObject = null;
     }
 
-    isWebcamRunning = false;
-    startCameraBtn.style.display = "inline-flex";
-    stopCameraBtn.style.display = "none";
+    isCctvLive = false;
+    btnStartCamera.style.display = "inline-flex";
+    btnStopCamera.style.display = "none";
+    if (btnCaptureSnapshot) btnCaptureSnapshot.disabled = true;
 
-    if (webcamBanner) {
-      webcamBanner.className = "result-banner";
-    }
-    if (webcamStatusText) webcamStatusText.textContent = "CAMERA OFFLINE";
-    if (webcamConfidence) webcamConfidence.textContent = "--%";
+    if (cctvAssessmentBanner) cctvAssessmentBanner.className = "assessment-banner";
+    if (cctvThreatHeading) cctvThreatHeading.textContent = "SENSOR OFFLINE";
+    if (cctvThreatSub) cctvThreatSub.textContent = "Activate video ingestion to initiate real-time AI perimeter surveillance";
+    if (cctvThreatPct) cctvThreatPct.textContent = "--%";
+    if (hudActiveThreatTag) hudActiveThreatTag.textContent = "STANDBY";
+    if (hudFpsCounter) hudFpsCounter.textContent = "INFERENCE: 0.0 FPS";
   }
 
-  async function captureAndSendWebcamFrame() {
-    if (!isWebcamRunning || isPredictingFrame || !webcamVideo || !webcamCanvas) return;
+  async function pollWebcamFrame() {
+    if (!isCctvLive || isFrameInFlight || !webcamVideo || !webcamCanvas) return;
 
     const ctx = webcamCanvas.getContext("2d");
-    webcamCanvas.width = 320; // Reduced resolution for fast network transmission
+    webcamCanvas.width = 320;
     webcamCanvas.height = 240;
 
     ctx.drawImage(webcamVideo, 0, 0, webcamCanvas.width, webcamCanvas.height);
-    const base64Data = webcamCanvas.toDataURL("image/jpeg", 0.7);
+    const frameBase64 = webcamCanvas.toDataURL("image/jpeg", 0.7);
 
-    isPredictingFrame = true;
+    isFrameInFlight = true;
     try {
       const res = await fetch("/api/predict/frame", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frame: base64Data }),
+        body: JSON.stringify({ frame: frameBase64 }),
       });
       const data = await res.json();
-      renderWebcamResult(data);
+      renderCctvTelemetry(data);
 
-      frameCount++;
+      fpsSampleCount++;
       const now = Date.now();
-      if (now - lastFpsTime >= 1000) {
-        if (webcamFpsText) {
-          webcamFpsText.textContent = `Inference: ${(frameCount * 1000 / (now - lastFpsTime)).toFixed(1)} FPS`;
-        }
-        frameCount = 0;
-        lastFpsTime = now;
+      if (now - fpsTimerStart >= 1000) {
+        const measuredFps = ((fpsSampleCount * 1000) / (now - fpsTimerStart)).toFixed(1);
+        if (hudFpsCounter) hudFpsCounter.textContent = `INFERENCE: ${measuredFps} FPS`;
+        fpsSampleCount = 0;
+        fpsTimerStart = now;
       }
     } catch (e) {
-      console.warn("Webcam frame predict error:", e);
+      console.warn("CCTV frame infer error:", e);
     } finally {
-      isPredictingFrame = false;
+      isFrameInFlight = false;
     }
   }
 
-  function renderWebcamResult(data) {
-    if (!data || !webcamBanner) return;
+  function renderCctvTelemetry(data) {
+    if (!data || !cctvAssessmentBanner) return;
 
     const pred = data.prediction || "Neutral";
     const confidence = data.confidence || 0.0;
     const isHazard = data.is_hazard;
 
-    webcamBanner.className = "result-banner";
+    cctvAssessmentBanner.className = "assessment-banner";
     if (pred === "Fire") {
-      webcamBanner.classList.add("hazard-fire");
+      cctvAssessmentBanner.classList.add("threat-fire");
     } else if (pred === "Smoke") {
-      webcamBanner.classList.add("hazard-smoke");
+      cctvAssessmentBanner.classList.add("threat-smoke");
     } else {
-      webcamBanner.classList.add("hazard-safe");
+      cctvAssessmentBanner.classList.add("threat-safe");
     }
 
-    if (webcamStatusText) {
-      webcamStatusText.textContent = `${pred.toUpperCase()} (${confidence.toFixed(1)}%)`;
+    if (cctvThreatHeading) {
+      cctvThreatHeading.textContent = `${pred.toUpperCase()} CONFIRMED`;
     }
-    if (webcamConfidence) {
-      webcamConfidence.textContent = `${confidence.toFixed(1)}%`;
-      webcamConfidence.style.color = data.color_hex || "#fff";
+    if (cctvThreatSub) {
+      cctvThreatSub.textContent = isHazard
+        ? `Optical trigger: ${data.hazard_level || "ALERT"} state detected by neural classifier.`
+        : "Perimeter clear. No thermal combustion signatures detected.";
+    }
+    if (cctvThreatPct) {
+      cctvThreatPct.textContent = `${confidence.toFixed(1)}%`;
+      cctvThreatPct.style.color = data.color_hex || "#fff";
     }
 
-    if (isHazard) {
-      triggerAlarmSiren();
+    if (hudActiveThreatTag) {
+      hudActiveThreatTag.textContent = `THREAT: ${pred.toUpperCase()} (${confidence.toFixed(0)}%)`;
+      hudActiveThreatTag.style.color = data.color_hex || "#fff";
+    }
+
+    // Trigger audible alarm if hazard reaches threshold
+    if (isHazard && confidence >= detectionThreshold) {
+      triggerHazardSiren(pred);
+      logIncidentFeed(pred, confidence);
     }
   }
+
+  // Incident Feed Logger
+  let lastLoggedIncidentTime = 0;
+  function logIncidentFeed(predClass, conf) {
+    const now = Date.now();
+    // Throttle log entries to once per 2.5 seconds to prevent spamming
+    if (now - lastLoggedIncidentTime < 2500 || !liveIncidentFeed) return;
+    lastLoggedIncidentTime = now;
+
+    const timeStr = new Date().toTimeString().split(" ")[0];
+    const row = document.createElement("div");
+    row.className = "incident-row";
+    const tagClass = predClass === "Fire" ? "tag-fire" : "tag-smoke";
+
+    row.innerHTML = `
+      <span>[${timeStr}] CAM-01 ANOMALY</span>
+      <span class="pill-threat-tag ${tagClass}">${predClass} ${conf.toFixed(1)}%</span>
+    `;
+
+    // Remove standby message if first log
+    if (liveIncidentFeed.children.length === 1 && liveIncidentFeed.children[0].textContent.includes("Waiting")) {
+      liveIncidentFeed.innerHTML = "";
+    }
+
+    liveIncidentFeed.prepend(row);
+  }
+
+  if (btnClearLog && liveIncidentFeed) {
+    btnClearLog.addEventListener("click", () => {
+      liveIncidentFeed.innerHTML = `
+        <div class="incident-row" style="color: var(--text-tertiary);">
+          <span>Incident log register cleared. Surveillance active.</span>
+        </div>
+      `;
+      showToast("Incident stream cleared");
+    });
+  }
+
+  // Snapshot Capture & Download
+  if (btnCaptureSnapshot && webcamVideo) {
+    btnCaptureSnapshot.addEventListener("click", () => {
+      if (!isCctvLive) return;
+
+      const snapCanvas = document.createElement("canvas");
+      snapCanvas.width = webcamVideo.videoWidth || 640;
+      snapCanvas.height = webcamVideo.videoHeight || 480;
+      const snapCtx = snapCanvas.getContext("2d");
+
+      // Draw mirrored video frame
+      snapCtx.translate(snapCanvas.width, 0);
+      snapCtx.scale(-1, 1);
+      snapCtx.drawImage(webcamVideo, 0, 0, snapCanvas.width, snapCanvas.height);
+      snapCtx.setTransform(1, 0, 0, 1, 0, 0);
+
+      // Overlay watermark stamp
+      snapCtx.fillStyle = "rgba(13, 18, 28, 0.8)";
+      snapCtx.fillRect(10, 10, 240, 36);
+      snapCtx.fillStyle = "#10b981";
+      snapCtx.font = "14px 'JetBrains Mono', monospace";
+      snapCtx.fillText("FIRE & SMOKE SNAPSHOT", 20, 33);
+
+      const dataUrl = snapCanvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = `CCTV_Snapshot_${Date.now()}.png`;
+      a.click();
+      showToast("High-resolution surveillance snapshot downloaded");
+    });
+  }
+
+  // ========================================================================
+  // 11. API Copy Code Buttons
+  // ========================================================================
+  const copyButtons = document.querySelectorAll(".btn-copy-code[data-copy]");
+  copyButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const codeToCopy = btn.getAttribute("data-copy");
+      if (codeToCopy && navigator.clipboard) {
+        navigator.clipboard.writeText(codeToCopy).then(() => {
+          showToast("cURL command copied to clipboard");
+        });
+      }
+    });
+  });
 });

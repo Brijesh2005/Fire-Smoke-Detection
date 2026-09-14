@@ -87,16 +87,21 @@ def list_samples():
     for f in files:
         # Pre-assign helpful hint categories based on dataset inspection
         hint = "Sample"
+        category = "other"
         if "fire" in f.lower() or f in ["26.jpg", "7.jpg", "image_1.jpg", "image_24.jpg", "image_3.jpg"]:
             hint = "Fire Sample"
+            category = "fire"
         elif "smoke" in f.lower() or f in ["image_0.jpg", "image_12.jpg", "image_13.jpg"]:
             hint = "Smoke Sample"
+            category = "smoke"
         elif "neutral" in f.lower() or f in ["image_7.jpg", "image_14.jpg", "36.jpg", "55.jpg", "73.jpg", "94.jpg"]:
             hint = "Neutral Sample"
+            category = "neutral"
 
         samples.append({
             "filename": f,
             "hint": hint,
+            "category": category,
             "url": f"/api/samples/{f}"
         })
 

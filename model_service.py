@@ -123,7 +123,10 @@ class FireSmokeDetector:
             "hazard_level": color_info["level"],
             "color_hex": color_info["hex"],
             "probabilities": prob_dict,
-            "latency_ms": latency_ms
+            "latency_ms": latency_ms,
+            "width": img.width,
+            "height": img.height,
+            "resolution": f"{img.width}x{img.height}"
         }
 
     def predict_bytes(self, image_bytes: bytes) -> Dict[str, Any]:
